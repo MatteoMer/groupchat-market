@@ -14,7 +14,6 @@ pub struct User {
 pub struct Bet {
     pub bet_id: i64,
     pub creator_id: i64,
-    pub title: String,
     pub description: String,
     pub created_at: String,
     pub status: String,
@@ -74,7 +73,6 @@ impl Database {
             CREATE TABLE IF NOT EXISTS bets (
                 bet_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 creator_id INTEGER NOT NULL,
-                title TEXT NOT NULL,
                 description TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'open',
@@ -163,16 +161,15 @@ impl Database {
         Ok(user)
     }
 
-    pub async fn create_bet(&self, creator_id: i64, title: String, description: String) -> Result<i64> {
+    pub async fn create_bet(&self, creator_id: i64, description: String) -> Result<i64> {
         let now = chrono::Utc::now().to_rfc3339();
         let result = sqlx::query(
             r#"
-            INSERT INTO bets (creator_id, title, description, created_at, status)
-            VALUES (?1, ?2, ?3, ?4, 'open')
+            INSERT INTO bets (creator_id, description, created_at, status)
+            VALUES (?1, ?2, ?3, 'open')
             "#,
         )
         .bind(creator_id)
-        .bind(title)
         .bind(description)
         .bind(now)
         .execute(&self.pool)
@@ -200,14 +197,35 @@ impl Database {
         Ok(result.last_insert_rowid())
     }
 
-    pub async fn find_bet_by_title(&self, title: &str) -> Result<Option<Bet>> {
-        let bet = sqlx::query_as::<_, Bet>(
-            "SELECT bet_id, creator_id, title, description, created_at, status FROM bets WHERE LOWER(title) = LOWER(?) AND status = 'open'",
+    pub async fn get_all_bets(&self) -> Result<Vec<Bet>> {
+        let bets = sqlx::query_as::<_, Bet>(
+            "SELECT bet_id, creator_id, description, created_at, status FROM bets ORDER BY bet_id DESC",
         )
-        .bind(title)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(bets)
+    }
+
+    pub async fn get_bet_by_id(&self, bet_id: i64) -> Result<Option<Bet>> {
+        let bet = sqlx::query_as::<_, Bet>(
+            "SELECT bet_id, creator_id, description, created_at, status FROM bets WHERE bet_id = ?",
+        )
+        .bind(bet_id)
         .fetch_optional(&self.pool)
         .await?;
         Ok(bet)
+    }
+
+    pub async fn close_bet(&self, bet_id: i64, resolution: bool) -> Result<()> {
+        let status = if resolution { "resolved_yes" } else { "resolved_no" };
+        sqlx::query(
+            "UPDATE bets SET status = ? WHERE bet_id = ?",
+        )
+        .bind(status)
+        .bind(bet_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     pub async fn update_user_balance(&self, user_id: i64, new_balance: i64) -> Result<()> {

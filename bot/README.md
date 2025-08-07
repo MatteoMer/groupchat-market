@@ -4,17 +4,21 @@ A Telegram bot for managing bets in group chats with a virtual balance system.
 
 ## Features
 
-- **Balance System**: Each user gets 10,000 initial balance
-- **Bet Creation**: Users can create bets with descriptions
-- **Solution Recording**: Users can mark bets as solved by replying to messages
+- **Balance System**: Each user gets 10,000 initial balance (one-time)
+- **Prediction Markets**: Create yes/no prediction markets
+- **Wagering**: Bet on either side of a prediction
+- **AI Resolution**: Claude AI evaluates if solutions resolve bets
+- **Leaderboard**: Track top users by balance
 
 ## Setup
 
 1. Create a new bot on Telegram using @BotFather
 2. Get your bot token
-3. Set the environment variable:
+3. Get a Claude API key from https://console.anthropic.com/
+4. Set the environment variables:
    ```bash
    export TELOXIDE_TOKEN="your_bot_token_here"
+   export CLAUDE_API_KEY="your_claude_api_key_here"
    ```
 
 ## Running the Bot
@@ -27,9 +31,12 @@ The bot will create a SQLite database file (`bot.db`) to store user balances and
 
 ## Commands
 
-- `/init` - Admin-only command to initialize 10,000 balance for all users in the group
-- `/bet <description>` - Create a new bet with a description
-- `/solve` - Mark a bet as solved (must be used as a reply to a message)
+- `/init` - Get your initial 10,000 balance (one-time per user)
+- `/new <title> <description>` - Create a new bet/prediction market
+- `/bet <title> <yes/no> <amount>` - Place a wager on an existing bet
+- `/solve <bet_id>` - Mark a bet as solved (reply to a message, uses Claude AI to verify)
+- `/leaderboard` - Show top 10 users by balance
+- `/reset` - Admin-only command to reset the entire database
 - `/help` - Show available commands
 
 ## Database Schema

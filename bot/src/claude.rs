@@ -28,6 +28,7 @@ struct Content {
 #[derive(Debug, Deserialize)]
 pub struct BetResolution {
     pub resolved: bool,
+    pub outcome: bool,  // true = YES wins, false = NO wins
     pub reasoning: String,
 }
 
@@ -53,13 +54,16 @@ Analyze whether this message satisfies the bet's conditions. The author of the m
 IMPORTANT: Respond ONLY with valid JSON in this exact format:
 {{
   "resolved": true/false,
+  "outcome": true/false,
   "reasoning": "Brief explanation of why the bet is or isn't resolved"
 }}
 
+Note: 'resolved' indicates if the bet can be resolved now. 'outcome' indicates which side wins (true = YES wins, false = NO wins) if resolved.
+
 Example responses:
-- If bet is "Will John say hello?" and the message is from John saying "hello", respond: {{"resolved": true, "reasoning": "John said hello, which satisfies the bet condition"}}
-- If bet is "Will John say hello?" and the message is from Mary saying "hello", respond: {{"resolved": false, "reasoning": "Mary said hello, but the bet specifically requires John to say it"}}
-- If bet is "Will someone say hello?" and the message is from anyone saying "hello", respond: {{"resolved": true, "reasoning": "Someone (Mary) said hello, which satisfies the bet condition"}}
+- If bet is "Will John say hello?" and the message is from John saying "hello", respond: {{"resolved": true, "outcome": true, "reasoning": "John said hello, which satisfies the bet condition - YES wins"}}
+- If bet is "Will John say hello?" and the message is from Mary saying "hello", respond: {{"resolved": false, "outcome": false, "reasoning": "Mary said hello, but the bet specifically requires John to say it"}}
+- If bet is "Will someone say hello?" and the message is from anyone saying "hello", respond: {{"resolved": true, "outcome": true, "reasoning": "Someone (Mary) said hello, which satisfies the bet condition - YES wins"}}
 
 Always resolve false by default, until proven wrong by the context. Don't be reasonable, it should be a total consensus that what you resolved to is the right solve.
 When not sure resolve NO. It should be common sense to resolve yes. You should not try to interpret the solution as true by default, but be suspicious users will try to trick you in passing wrong solutions.

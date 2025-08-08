@@ -6,7 +6,9 @@ use std::sync::Arc;
 
 mod db;
 mod claude;
+mod api_client;
 use db::Database;
+use api_client::MarketApiClient;
 
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "These commands are supported:")]
@@ -31,7 +33,13 @@ enum Command {
 
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
-async fn handle_init(bot: Bot, msg: Message, db: Arc<Database>) -> HandlerResult {
+struct BotContext {
+    db: Arc<Database>,
+    api_client: Arc<MarketApiClient>,
+    contract_name: String,
+}
+
+async fn handle_init(bot: Bot, msg: Message, ctx: Arc<BotContext>) -> HandlerResult {
     let chat_id = msg.chat.id;
     let user_id = msg.from.as_ref().map(|u| u.id.0 as i64).unwrap_or(0);
     let username = msg.from.as_ref().and_then(|u| u.username.clone()).unwrap_or_else(|| "unknown".to_string());
@@ -45,26 +53,38 @@ async fn handle_init(bot: Bot, msg: Message, db: Arc<Database>) -> HandlerResult
     }
     
     // Check if user already initialized their balance
-    if db.is_user_initialized(user_id).await? {
+    if ctx.db.is_user_initialized(user_id).await? {
         bot.send_message(chat_id, "You have already initialized your balance. You can only use /init once.")
             .await?;
         return Ok(());
     }
     
-    // Initialize the user's balance
+    // Initialize the user's balance on the blockchain
     if let Some(from) = msg.from.as_ref() {
         let username = from.username.clone();
-        db.create_or_update_user(from.id.0 as i64, username, 10000).await?;
-        db.mark_user_initialized(from.id.0 as i64).await?;
-        bot.send_message(chat_id, format!("✅ Your balance has been initialized to 10,000. This is a one-time initialization."))
-            .await?;
-        log::info!("Successfully initialized balance for user {}", user_id);
+        
+        // Call the blockchain API to initialize the user
+        match ctx.api_client.initialize_user(user_id.to_string(), &ctx.contract_name).await {
+            Ok(tx_hash) => {
+                // Record initialization in local database
+                ctx.db.create_or_update_user(from.id.0 as i64, username, 10000).await?;
+                ctx.db.mark_user_initialized(from.id.0 as i64).await?;
+                bot.send_message(chat_id, format!("✅ Your balance has been initialized to 10,000 on-chain.\nTransaction: {}", tx_hash))
+                    .await?;
+                log::info!("Successfully initialized balance for user {} with tx {}", user_id, tx_hash);
+            }
+            Err(e) => {
+                bot.send_message(chat_id, format!("❌ Failed to initialize balance: {}", e))
+                    .await?;
+                log::error!("Failed to initialize user {}: {}", user_id, e);
+            }
+        }
     }
     
     Ok(())
 }
 
-async fn handle_new(bot: Bot, msg: Message, db: Arc<Database>, description: String) -> HandlerResult {
+async fn handle_new(bot: Bot, msg: Message, ctx: Arc<BotContext>, description: String) -> HandlerResult {
     let chat_id = msg.chat.id;
     let user_id = msg.from.as_ref().map(|u| u.id.0 as i64).unwrap_or(0);
     let username = msg.from.as_ref().and_then(|u| u.username.clone()).unwrap_or_else(|| "unknown".to_string());
@@ -78,26 +98,38 @@ async fn handle_new(bot: Bot, msg: Message, db: Arc<Database>, description: Stri
     }
     
     // Check if user has balance
-    let user = db.get_user(user_id).await?;
+    let user = ctx.db.get_user(user_id).await?;
     if user.is_none() {
         bot.send_message(chat_id, "You need to use /init first to get your initial balance of 10,000.")
             .await?;
         return Ok(());
     }
     
-    let bet_id = db.create_bet(user_id, description.clone()).await?;
-    
-    bot.send_message(
-        chat_id,
-        format!("✅ Bet #{} created by @{}\n📄 Description: {}", bet_id, username, description)
-    )
-    .await?;
-    log::info!("Bet #{} created successfully by user {}", bet_id, user_id);
+    // Create market on blockchain
+    match ctx.api_client.create_market(user_id.to_string(), description.clone(), &ctx.contract_name).await {
+        Ok(tx_hash) => {
+            // Store in local database for tracking
+            let bet_id = ctx.db.create_bet(user_id, description.clone()).await?;
+            
+            bot.send_message(
+                chat_id,
+                format!("✅ Market #{} created on-chain by @{}\n📄 Description: {}\nTransaction: {}", 
+                    bet_id, username, description, tx_hash)
+            )
+            .await?;
+            log::info!("Market #{} created successfully by user {} with tx {}", bet_id, user_id, tx_hash);
+        }
+        Err(e) => {
+            bot.send_message(chat_id, format!("❌ Failed to create market: {}", e))
+                .await?;
+            log::error!("Failed to create market for user {}: {}", user_id, e);
+        }
+    }
     
     Ok(())
 }
 
-async fn handle_bet(bot: Bot, msg: Message, db: Arc<Database>, args: String) -> HandlerResult {
+async fn handle_bet(bot: Bot, msg: Message, ctx: Arc<BotContext>, args: String) -> HandlerResult {
     let chat_id = msg.chat.id;
     let user_id = msg.from.as_ref().map(|u| u.id.0 as i64).unwrap_or(0);
     let username = msg.from.as_ref().and_then(|u| u.username.clone()).unwrap_or_else(|| "unknown".to_string());
@@ -145,7 +177,7 @@ async fn handle_bet(bot: Bot, msg: Message, db: Arc<Database>, args: String) -> 
     };
     
     // Check if user has balance
-    let user = db.get_user(user_id).await?;
+    let user = ctx.db.get_user(user_id).await?;
     let user = match user {
         Some(u) => u,
         None => {
@@ -162,7 +194,7 @@ async fn handle_bet(bot: Bot, msg: Message, db: Arc<Database>, args: String) -> 
     }
     
     // Find the bet by ID
-    let bet = db.get_bet_by_id(bet_id).await?;
+    let bet = ctx.db.get_bet_by_id(bet_id).await?;
     let bet = match bet {
         Some(b) if b.status == "open" => b,
         Some(_) => {
@@ -177,27 +209,38 @@ async fn handle_bet(bot: Bot, msg: Message, db: Arc<Database>, args: String) -> 
         }
     };
     
-    // Create the wager and update balance
-    let wager_id = db.create_wager(bet.bet_id, user_id, amount, side).await?;
-    let new_balance = user.balance - amount;
-    db.update_user_balance(user_id, new_balance).await?;
-    
-    let side_text = if side { "YES ✅" } else { "NO ❌" };
-    
-    bot.send_message(
-        chat_id,
-        format!(
-            "💰 Wager placed!\n📝 Bet #{}: {}\n🎯 Side: {}\n💵 Amount: {}\n💳 Remaining balance: {}\n🎲 Wager ID: #{}",
-            bet_id, bet.description, side_text, amount, new_balance, wager_id
-        )
-    )
-    .await?;
-    log::info!("Wager #{} placed by user {} on bet {} for amount {} on side {}", wager_id, user_id, bet.bet_id, amount, if side { "yes" } else { "no" });
+    // Place bet on blockchain
+    match ctx.api_client.place_bet(user_id.to_string(), bet_id as u64, side, amount as u128, &ctx.contract_name).await {
+        Ok(tx_hash) => {
+            // Create the wager and update balance locally
+            let _wager_id = ctx.db.create_wager(bet.bet_id, user_id, amount, side).await?;
+            let new_balance = user.balance - amount;
+            ctx.db.update_user_balance(user_id, new_balance).await?;
+            
+            let side_text = if side { "YES ✅" } else { "NO ❌" };
+            
+            bot.send_message(
+                chat_id,
+                format!(
+                    "💰 Bet placed on-chain!\n📝 Market #{}: {}\n🎯 Side: {}\n💵 Amount: {}\n💳 Remaining balance: {}\nTransaction: {}",
+                    bet_id, bet.description, side_text, amount, new_balance, tx_hash
+                )
+            )
+            .await?;
+            log::info!("Bet placed by user {} on market {} for amount {} on side {} with tx {}", 
+                user_id, bet.bet_id, amount, if side { "yes" } else { "no" }, tx_hash);
+        }
+        Err(e) => {
+            bot.send_message(chat_id, format!("❌ Failed to place bet: {}", e))
+                .await?;
+            log::error!("Failed to place bet for user {}: {}", user_id, e);
+        }
+    }
     
     Ok(())
 }
 
-async fn handle_solve(bot: Bot, msg: Message, db: Arc<Database>) -> HandlerResult {
+async fn handle_solve(bot: Bot, msg: Message, ctx: Arc<BotContext>) -> HandlerResult {
     let chat_id = msg.chat.id;
     let solver_id = msg.from.as_ref().map(|u| u.id.0 as i64).unwrap_or(0);
     let solver_username = msg.from.as_ref().and_then(|u| u.username.clone()).unwrap_or_else(|| "unknown".to_string());
@@ -220,7 +263,7 @@ async fn handle_solve(bot: Bot, msg: Message, db: Arc<Database>) -> HandlerResul
     }
     
     // Check if user has balance
-    let user = db.get_user(solver_id).await?;
+    let user = ctx.db.get_user(solver_id).await?;
     if user.is_none() {
         bot.send_message(chat_id, "You need to use /init first to get your initial balance of 10,000.")
             .await?;
@@ -250,7 +293,7 @@ async fn handle_solve(bot: Bot, msg: Message, db: Arc<Database>) -> HandlerResul
     };
     
     // Get the bet details
-    let bet = match db.get_bet_by_id(bet_id).await? {
+    let bet = match ctx.db.get_bet_by_id(bet_id).await? {
         Some(b) if b.status == "open" => b,
         Some(_) => {
             bot.send_message(chat_id, "This bet is already closed.")
@@ -300,29 +343,50 @@ async fn handle_solve(bot: Bot, msg: Message, db: Arc<Database>) -> HandlerResul
     };
     
     // Record the solution
-    let solution_id = db.create_solution(bet_id, solver_id, message_id).await?;
+    let solution_id = ctx.db.create_solution(bet_id, solver_id, message_id).await?;
     
     if resolution.resolved {
-        // Close the bet
-        db.close_bet(bet_id, true).await?; // TODO: Determine yes/no based on the actual solution
-        
-        bot.send_message(
-            chat_id,
-            format!(
-                "✅ BET RESOLVED!\n\n📊 Bet #{}\n📄 Description: {}\n💬 Solution: \"{}\"\n👤 Solved by: @{}\n\n🤖 Claude's analysis: {}\n\n💰 Payouts will be processed soon.",
-                bet_id,
-                bet.description,
-                replied_text,
-                solver_username,
-                resolution.reasoning
-            )
-        )
-        .await?;
+        // Resolve the market on blockchain
+        match ctx.api_client.resolve_market(
+            solver_id.to_string(),
+            bet_id as u64,
+            resolution.outcome,
+            &ctx.contract_name
+        ).await {
+            Ok(tx_hash) => {
+                // Close the bet locally
+                ctx.db.close_bet(bet_id, resolution.outcome).await?;
+                
+                bot.send_message(
+                    chat_id,
+                    format!(
+                        "✅ MARKET RESOLVED ON-CHAIN!\n\n📊 Market #{}\n📄 Description: {}\n💬 Solution: \"{}\"\n👤 Solved by: @{}\n🎯 Outcome: {}\n\n🤖 Claude's analysis: {}\n\nTransaction: {}\n\n💰 Winners can claim their rewards.",
+                        bet_id,
+                        bet.description,
+                        replied_text,
+                        solver_username,
+                        if resolution.outcome { "YES ✅" } else { "NO ❌" },
+                        resolution.reasoning,
+                        tx_hash
+                    )
+                )
+                .await?;
+                log::info!("Market #{} resolved on-chain with tx {}", bet_id, tx_hash);
+            }
+            Err(e) => {
+                bot.send_message(
+                    chat_id,
+                    format!("❌ Failed to resolve market on-chain: {}\n\nThe bet remains open.", e)
+                )
+                .await?;
+                log::error!("Failed to resolve market {}: {}", bet_id, e);
+            }
+        }
     } else {
         bot.send_message(
             chat_id,
             format!(
-                "❌ NOT RESOLVED\n\n📊 Bet #{}\n📄 Description: {}\n💬 Proposed solution: \"{}\"\n👤 Proposed by: @{}\n\n🤖 Claude's analysis: {}\n\nThe bet remains open.",
+                "❌ NOT RESOLVED\n\n📊 Market #{}\n📄 Description: {}\n💬 Proposed solution: \"{}\"\n👤 Proposed by: @{}\n\n🤖 Claude's analysis: {}\n\nThe market remains open.",
                 bet_id,
                 bet.description,
                 replied_text,
@@ -338,14 +402,14 @@ async fn handle_solve(bot: Bot, msg: Message, db: Arc<Database>) -> HandlerResul
     Ok(())
 }
 
-async fn handle_list(bot: Bot, msg: Message, db: Arc<Database>) -> HandlerResult {
+async fn handle_list(bot: Bot, msg: Message, ctx: Arc<BotContext>) -> HandlerResult {
     let chat_id = msg.chat.id;
     let user_id = msg.from.as_ref().map(|u| u.id.0 as i64).unwrap_or(0);
     let username = msg.from.as_ref().and_then(|u| u.username.clone()).unwrap_or_else(|| "unknown".to_string());
     
     log::info!("User @{} (ID: {}) called /list in chat {}", username, user_id, chat_id.0);
     
-    let bets = db.get_all_bets().await?;
+    let bets = ctx.db.get_all_bets().await?;
     
     if bets.is_empty() {
         bot.send_message(chat_id, "No bets available. Use /new to create the first bet!")
@@ -387,7 +451,7 @@ async fn handle_list(bot: Bot, msg: Message, db: Arc<Database>) -> HandlerResult
     Ok(())
 }
 
-async fn handle_leaderboard(bot: Bot, msg: Message, db: Arc<Database>) -> HandlerResult {
+async fn handle_leaderboard(bot: Bot, msg: Message, ctx: Arc<BotContext>) -> HandlerResult {
     let chat_id = msg.chat.id;
     let user_id = msg.from.as_ref().map(|u| u.id.0 as i64).unwrap_or(0);
     let username = msg.from.as_ref().and_then(|u| u.username.clone()).unwrap_or_else(|| "unknown".to_string());
@@ -395,7 +459,7 @@ async fn handle_leaderboard(bot: Bot, msg: Message, db: Arc<Database>) -> Handle
     log::info!("User @{} (ID: {}) called /leaderboard in chat {}", username, user_id, chat_id.0);
     
     // Get top 10 users
-    let users = db.get_leaderboard(10).await?;
+    let users = ctx.db.get_leaderboard(10).await?;
     
     if users.is_empty() {
         bot.send_message(chat_id, "No users have initialized their balance yet. Use /init to get started!")
@@ -430,7 +494,7 @@ async fn handle_leaderboard(bot: Bot, msg: Message, db: Arc<Database>) -> Handle
     Ok(())
 }
 
-async fn handle_reset(bot: Bot, msg: Message, db: Arc<Database>) -> HandlerResult {
+async fn handle_reset(bot: Bot, msg: Message, ctx: Arc<BotContext>) -> HandlerResult {
     let chat_id = msg.chat.id;
     let user_id = msg.from.as_ref().map(|u| u.id.0 as i64).unwrap_or(0);
     let username = msg.from.as_ref().and_then(|u| u.username.clone()).unwrap_or_else(|| "unknown".to_string());
@@ -453,7 +517,7 @@ async fn handle_reset(bot: Bot, msg: Message, db: Arc<Database>) -> HandlerResul
     }
     
     // Reset the database
-    db.reset_all().await?;
+    ctx.db.reset_all().await?;
     
     bot.send_message(
         chat_id,
@@ -466,15 +530,15 @@ async fn handle_reset(bot: Bot, msg: Message, db: Arc<Database>) -> HandlerResul
     Ok(())
 }
 
-async fn handle_message(bot: Bot, msg: Message, cmd: Command, db: Arc<Database>) -> HandlerResult {
+async fn handle_message(bot: Bot, msg: Message, cmd: Command, ctx: Arc<BotContext>) -> HandlerResult {
     match cmd {
-        Command::Init => handle_init(bot, msg, db).await,
-        Command::New(args) => handle_new(bot, msg, db, args).await,
-        Command::Bet(args) => handle_bet(bot, msg, db, args).await,
-        Command::List => handle_list(bot, msg, db).await,
-        Command::Solve => handle_solve(bot, msg, db).await,
-        Command::Leaderboard => handle_leaderboard(bot, msg, db).await,
-        Command::Reset => handle_reset(bot, msg, db).await,
+        Command::Init => handle_init(bot, msg, ctx).await,
+        Command::New(args) => handle_new(bot, msg, ctx, args).await,
+        Command::Bet(args) => handle_bet(bot, msg, ctx, args).await,
+        Command::List => handle_list(bot, msg, ctx).await,
+        Command::Solve => handle_solve(bot, msg, ctx).await,
+        Command::Leaderboard => handle_leaderboard(bot, msg, ctx).await,
+        Command::Reset => handle_reset(bot, msg, ctx).await,
         Command::Help => {
             bot.send_message(msg.chat.id, Command::descriptions().to_string())
                 .await?;
@@ -488,19 +552,57 @@ async fn main() -> Result<()> {
     pretty_env_logger::init();
     log::info!("Starting bot...");
     
+    // Initialize database
     let database_url = "sqlite://bot.db?mode=rwc";
     let db = Arc::new(Database::new(database_url).await?);
     db.init().await?;
     log::info!("Database initialized");
+    
+    // Get server URL from environment or use default
+    let server_url = std::env::var("SERVER_URL").unwrap_or_else(|_| "http://localhost:4001".to_string());
+    log::info!("Connecting to server at: {}", server_url);
+    
+    // Initialize API client
+    let api_client = Arc::new(MarketApiClient::new(server_url.clone()));
+    
+    // Check server health
+    match api_client.health_check().await {
+        Ok(true) => log::info!("Server is healthy"),
+        Ok(false) => log::warn!("Server health check returned false"),
+        Err(e) => {
+            log::error!("Failed to connect to server: {}. Bot will run in offline mode.", e);
+            // You could exit here if you want to require server connection
+            // return Err(anyhow::anyhow!("Server not available"));
+        }
+    }
+    
+    // Get contract name from server
+    let contract_name = match api_client.get_config().await {
+        Ok(config) => {
+            log::info!("Got contract name from server: {}", config.contract_name);
+            config.contract_name
+        }
+        Err(e) => {
+            log::warn!("Failed to get config from server: {}. Using default.", e);
+            "contract1".to_string()
+        }
+    };
+    
+    // Create bot context
+    let ctx = Arc::new(BotContext {
+        db,
+        api_client,
+        contract_name,
+    });
     
     let bot = Bot::from_env();
     
     let handler = Update::filter_message()
         .filter_command::<Command>()
         .endpoint(move |bot: Bot, msg: Message, cmd: Command| {
-            let db = Arc::clone(&db);
+            let ctx = Arc::clone(&ctx);
             async move {
-                if let Err(e) = handle_message(bot, msg, cmd, db).await {
+                if let Err(e) = handle_message(bot, msg, cmd, ctx).await {
                     log::error!("Error handling message: {:?}", e);
                 }
                 Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())

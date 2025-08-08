@@ -6,24 +6,26 @@ rust-version = "1.81"
 [[bin]]
 name = "contract1"
 path = "src/main.rs"
-required-features = ["sp1"]
+required-features = ["risc0"]
 test = false
 
 [dependencies]
 anyhow = "1.0.96"
-sdk = { workspace = true, features = ["tracing"] }
+sdk = { workspace = true }
 serde = { version = "1.0", default-features = false, features = [
   "derive",
   "alloc",
 ] }
-borsh = { version = "1.5.7" }
-# sparse-merkle-tree can't be compiled in sp1
-# hyle-smt-token = { workspace = true, default-features = false, features = [] }
+borsh = { workspace = true }
 
-sp1-zkvm = { version = "=5.0.8", default-features = false, optional = true }
+
+risc0-zkvm = { version = "2.0.0", default-features = false, optional = true, features = [
+  'std',
+] }
 client-sdk = { workspace = true, default-features = false, features = [
-  "sp1",
+  "risc0",
   "rest",
+  "indexer"
 ], optional = true }
 
 [dev-dependencies]
@@ -32,8 +34,12 @@ contract1 = { path = ".", features = ["client"] }
 clap = { version = "4.5.23", features = ["derive"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1.44.2", features = ["full", "tracing"] }
+risc0-zkvm = { version = "2.0.0", default-features = false, features = [
+  'std',
+  'prove',
+] }
 
 [features]
 default = []
 client = ["dep:client-sdk"]
-sp1 = ["dep:sp1-zkvm", "sdk/sp1"]
+risc0 = ["dep:risc0-zkvm", "sdk/risc0"]

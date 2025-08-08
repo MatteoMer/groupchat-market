@@ -2,26 +2,24 @@ use borsh::{io::Error, BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use sdk::{ContractName, Identity, RunResult};
+use sdk::{Identity, RunResult};
 
 #[cfg(feature = "client")]
 pub mod client;
 #[cfg(feature = "client")]
 pub mod indexer;
 
-impl sdk::FullStateRevert for ParimutuelMarket {}
-
-impl sdk::ZkContract for ParimutuelMarket {
+impl sdk::ZkContract for Contract1 {
     /// Entry point of the contract's logic
     fn execute(&mut self, calldata: &sdk::Calldata) -> RunResult {
         // Parse contract inputs
-        let (action, ctx) = sdk::utils::parse_calldata::<Nonced<MarketAction>>(calldata)?;
+        let (action, ctx) = sdk::utils::parse_raw_calldata::<MarketAction>(calldata)?;
         let identity = calldata.identity.clone();
 
         // Execute the given action
-        let res = match action.action {
+        let res = match action {
             MarketAction::SetAdmin { new_admin } => self.set_admin(identity, new_admin)?,
-            MarketAction::Initialize => self.initialize(identity)?,
+            MarketAction::Initialize {} => self.initialize(identity)?,
             MarketAction::CreateMarket { description } => {
                 self.create_market(identity, description)?
             }
@@ -43,27 +41,22 @@ impl sdk::ZkContract for ParimutuelMarket {
 
     /// Serialize the full state on-chain
     fn commit(&self) -> sdk::StateCommitment {
-        sdk::StateCommitment(self.as_bytes().expect("Failed to encode ParimutuelMarket"))
+        sdk::StateCommitment(self.as_bytes().expect("Failed to encode Contract1"))
     }
 }
 
-impl ParimutuelMarket {
+impl Contract1 {
     pub fn new() -> Self {
         Self {
             users: HashMap::new(),
             markets: HashMap::new(),
-            next_market_id: 1,
-            admin: None, // Admin must be set through SetAdmin action
+            next_market_id: 0,
         }
     }
     
-    pub fn new_with_admin(admin: Identity) -> Self {
-        Self {
-            users: HashMap::new(),
-            markets: HashMap::new(),
-            next_market_id: 1,
-            admin: Some(admin),
-        }
+    pub fn new_with_admin(_admin: Identity) -> Self {
+        // Admin functionality removed - just create a normal instance
+        Self::new()
     }
 
     fn get_or_create_user(&mut self, identity: Identity) -> &mut UserState {
@@ -74,17 +67,9 @@ impl ParimutuelMarket {
         })
     }
     
-    pub fn set_admin(&mut self, identity: Identity, new_admin: Identity) -> Result<String, String> {
-        // If no admin is set yet, allow anyone to set it (first-time setup)
-        // Otherwise, only current admin can change it
-        if let Some(current_admin) = &self.admin {
-            if *current_admin != identity {
-                return Err("Only current admin can change admin".to_string());
-            }
-        }
-        
-        self.admin = Some(new_admin.clone());
-        Ok(format!("Admin set to: {}", new_admin.to_string()))
+    pub fn set_admin(&mut self, _identity: Identity, new_admin: Identity) -> Result<String, String> {
+        // Admin functionality removed - this is now a no-op
+        Ok(format!("Admin functionality removed - anyone can do everything now"))
     }
 
     pub fn initialize(&mut self, identity: Identity) -> Result<String, String> {
@@ -109,8 +94,8 @@ impl ParimutuelMarket {
             return Err("User not initialized. Use Initialize first.".to_string());
         }
 
-        let market_id = self.next_market_id;
         self.next_market_id += 1;
+        let market_id = self.next_market_id;
 
         let market = Market {
             id: market_id,
@@ -184,16 +169,11 @@ impl ParimutuelMarket {
 
     pub fn resolve_market(
         &mut self,
-        identity: Identity,
+        _identity: Identity,
         market_id: u64,
         outcome: bool, // true = yes won, false = no won
     ) -> Result<String, String> {
-        // Only admin can resolve markets
-        match &self.admin {
-            Some(admin) if *admin == identity => {},
-            Some(_) => return Err("Only admin can resolve markets".to_string()),
-            None => return Err("No admin set. Use SetAdmin first.".to_string()),
-        }
+        // Anyone can resolve markets now
         
         let market = self.markets.get_mut(&market_id)
             .ok_or("Market not found")?;
@@ -301,30 +281,30 @@ const INITIAL_BALANCE: u128 = 10_000;
 // Data structures
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone, Default)]
 pub struct UserState {
-    balance: u128,
-    initialized: bool,
-    bets: Vec<UserBet>,
+    pub balance: u128,
+    pub initialized: bool,
+    pub bets: Vec<UserBet>,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone)]
 pub struct UserBet {
-    market_id: u64,
-    side: bool, // true = yes, false = no
-    amount: u128,
-    claimed: bool,
+    pub market_id: u64,
+    pub side: bool, // true = yes, false = no
+    pub amount: u128,
+    pub claimed: bool,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone)]
 pub struct Market {
-    id: u64,
-    creator: Identity,
-    description: String,
-    yes_pool: u128,
-    no_pool: u128,
-    yes_bettors: HashMap<Identity, u128>,
-    no_bettors: HashMap<Identity, u128>,
-    status: MarketStatus,
-    created_at: u64,
+    pub id: u64,
+    pub creator: Identity,
+    pub description: String,
+    pub yes_pool: u128,
+    pub no_pool: u128,
+    pub yes_bettors: HashMap<Identity, u128>,
+    pub no_bettors: HashMap<Identity, u128>,
+    pub status: MarketStatus,
+    pub created_at: u64,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -334,25 +314,25 @@ pub enum MarketStatus {
     ResolvedNo,
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone, Default)]
-pub struct ParimutuelMarket {
-    users: HashMap<Identity, UserState>,
-    markets: HashMap<u64, Market>,
-    next_market_id: u64,
-    admin: Option<Identity>,
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone)]
+pub struct Contract1 {
+    pub users: HashMap<Identity, UserState>,
+    pub markets: HashMap<u64, Market>,
+    pub next_market_id: u64,
 }
 
-#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone, PartialEq)]
-pub struct Nonced<T> {
-    pub action: T,
-    pub nonce: u64,
+impl Default for Contract1 {
+    fn default() -> Self {
+        Self::new()
+    }
 }
+
 
 /// Enum representing possible calls to the contract functions
 #[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone, PartialEq)]
 pub enum MarketAction {
     SetAdmin { new_admin: Identity },
-    Initialize,
+    Initialize {},
     CreateMarket { description: String },
     PlaceBet { market_id: u64, side: bool, amount: u128 },
     ResolveMarket { market_id: u64, outcome: bool },
@@ -370,13 +350,13 @@ impl MarketAction {
     }
 }
 
-impl ParimutuelMarket {
+impl Contract1 {
     pub fn as_bytes(&self) -> Result<Vec<u8>, Error> {
         borsh::to_vec(self)
     }
 }
 
-impl From<sdk::StateCommitment> for ParimutuelMarket {
+impl From<sdk::StateCommitment> for Contract1 {
     fn from(state: sdk::StateCommitment) -> Self {
         borsh::from_slice(&state.0)
             .map_err(|_| "Could not decode parimutuel market state".to_string())

@@ -1,0 +1,10 @@
+id = "hyle-parimutuel-market"
+contract_name = "contract1"
+log_format = "full"
+rest_server_port = 4001
+da_read_from = "127.0.0.1:4141"
+rest_server_max_body_size = 10_485_760
+data_directory = "data"
+buffer_blocks = 0
+max_txs_per_proof = 100
+tx_working_window_size = 500

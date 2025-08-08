@@ -1,20 +1,21 @@
 #![no_main]
+#![no_std]
 
-use contract1::Faucet;
+extern crate alloc;
+
+use alloc::vec::Vec;
+use contract1::Contract1;
 use sdk::{
-    guest::{execute, GuestEnv, SP1Env},
+    guest::{execute, GuestEnv, Risc0Env},
     Calldata,
 };
 
-sp1_zkvm::entrypoint!(main);
+risc0_zkvm::guest::entry!(main);
 
 fn main() {
-    let env = SP1Env {};
+    let env = Risc0Env {};
     let (commitment_metadata, calldata): (Vec<u8>, Vec<Calldata>) = env.read();
 
-    let outputs = execute::<Faucet>(&commitment_metadata, &calldata);
-
-    let vec = borsh::to_vec(&outputs).unwrap();
-
-    sp1_zkvm::io::commit_slice(&vec);
+    let output = execute::<Contract1>(&commitment_metadata, &calldata);
+    env.commit(output);
 }

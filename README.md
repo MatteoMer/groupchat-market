@@ -1,4 +1,4 @@
-# Groupchat Market 
+# Groupchat Market: Prediction markets for your groupchat
 
 Built during [Frontiers](https://frontiers.paradigm.xyz/)
 
@@ -28,7 +28,9 @@ Bot: ✅ MARKET RESOLVED: NO wins
 
 ### Architecture
 
-Everything: bot, server and the contract are written in Rust. The contract is a vApp proven on a zkVM. This proof is used for settlement on [Hyli](https://hyli.org/), a blockchain where every app is a vApp and where the execution is offchain, the consensus is only verifying the proof
+Everything: bot, server and the contract are written in Rust. The contract is a vApp proven on a zkVM. 
+
+This proof is used for settlement on [Hyli](https://hyli.org/), a blockchain where every app is a vApp and where the execution is offchain, the consensus is only verifying the proof
 
 ## License
 

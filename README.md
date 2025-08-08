@@ -32,6 +32,60 @@ Everything: bot, server and the contract are written in Rust. The contract is a 
 
 This proof is used for settlement on [Hyli](https://hyli.org/), a blockchain where every app is a vApp and where the execution is offchain, the consensus is only verifying the proof
 
+---
+
+### Getting Started
+
+#### Prerequisites
+- Rust toolchain (latest stable)
+- Telegram Bot Token (from [@BotFather](https://t.me/botfather))
+- Claude API Key (from [Anthropic](https://console.anthropic.com/))
+- Hyli node (see [Hyli docs](https://docs.hyli.org/) for setup)
+
+#### 1. Run the Hyli Node
+Follow the official documentation at [docs.hyli.org](https://docs.hyli.org/) to set up and run a Hyli node.
+
+#### 2. Build the Contract
+```bash
+# Clone the repository
+git clone https://github.com/MatteoMer/groupchat-market.git
+cd groupchat-market
+
+# Build the contract (fast/local build)
+cd contracts
+cargo build --features nonreproducible,contract1
+
+# Or for reproducible build (slower, uses Docker)
+cargo build --features build,contract1
+```
+
+#### 3. Run the Server
+```bash
+# From project root
+cd server
+cargo run -- --config ../config.toml
+
+# Server will start on port 4001 by default
+```
+
+#### 4. Run the Telegram Bot
+```bash
+# Set required environment variables
+export TELOXIDE_TOKEN="your_telegram_bot_token"
+export CLAUDE_API_KEY="your_claude_api_key"
+
+# Run the bot
+cd bot
+cargo run
+
+# The bot will connect to the server at localhost:4001
+```
+
+#### Configuration
+- Edit `config.toml` to customize ports and settings
+- Server config can be overridden with `HYLE_` prefixed environment variables
+- Bot database is stored in `bot/bot.db`
+
 ## License
 
 MIT

@@ -357,10 +357,19 @@ async fn handle_solve(bot: Bot, msg: Message, ctx: Arc<BotContext>) -> HandlerRe
                 // Close the bet locally
                 ctx.db.close_bet(bet_id, resolution.outcome).await?;
                 
+                // The contract automatically distributes winnings when resolving
+                // Log that resolution was successful but don't update balances locally
+                log::info!("Market #{} resolved. Contract automatically distributed winnings to winners.", bet_id);
+                
+                // Note: In a production system, you might want to:
+                // 1. Query the blockchain for updated balances
+                // 2. Update local database with the new balances
+                // This ensures local state stays in sync with on-chain state
+                
                 bot.send_message(
                     chat_id,
                     format!(
-                        "✅ MARKET RESOLVED ON-CHAIN!\n\n📊 Market #{}\n📄 Description: {}\n💬 Solution: \"{}\"\n👤 Solved by: @{}\n🎯 Outcome: {}\n\n🤖 Claude's analysis: {}\n\nTransaction: {}\n\n💰 Winners can claim their rewards.",
+                        "✅ MARKET RESOLVED ON-CHAIN!\n\n📊 Market #{}\n📄 Description: {}\n💬 Solution: \"{}\"\n👤 Solved by: @{}\n🎯 Outcome: {}\n\n🤖 Claude's analysis: {}\n\nTransaction: {}\n\n💰 Winnings have been automatically distributed to all winners!",
                         bet_id,
                         bet.description,
                         replied_text,

@@ -248,6 +248,16 @@ impl Database {
         .await?;
         Ok(users)
     }
+    
+    pub async fn get_wagers_for_bet(&self, bet_id: i64) -> Result<Vec<Wager>> {
+        let wagers = sqlx::query_as::<_, Wager>(
+            "SELECT wager_id, bet_id, user_id, amount, side, created_at FROM wagers WHERE bet_id = ?",
+        )
+        .bind(bet_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(wagers)
+    }
 
     pub async fn create_solution(&self, bet_id: i64, solver_id: i64, message_id: i64) -> Result<i64> {
         let now = chrono::Utc::now().to_rfc3339();

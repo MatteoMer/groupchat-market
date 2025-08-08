@@ -182,6 +182,39 @@ impl Contract1 {
             return Err("Market is not open".to_string());
         }
 
+        // Calculate payouts before changing status
+        let winning_pool = if outcome { market.yes_pool } else { market.no_pool };
+        let losing_pool = if outcome { market.no_pool } else { market.yes_pool };
+        let total_pool = winning_pool + losing_pool;
+        
+        // Get winners list
+        let winners: Vec<(Identity, u128)> = if outcome {
+            market.yes_bettors.clone().into_iter().collect()
+        } else {
+            market.no_bettors.clone().into_iter().collect()
+        };
+        
+        // Distribute winnings to all winners
+        let mut total_distributed = 0u128;
+        for (winner_id, stake) in winners.iter() {
+            if winning_pool > 0 {
+                // Calculate payout using parimutuel formula
+                let payout = (*stake as f64 / winning_pool as f64 * total_pool as f64) as u128;
+                
+                // Add winnings to user balance
+                if let Some(user) = self.users.get_mut(winner_id) {
+                    user.balance += payout;
+                    total_distributed += payout;
+                    
+                    // Mark their bet as claimed
+                    if let Some(bet) = user.bets.iter_mut()
+                        .find(|b| b.market_id == market_id && !b.claimed) {
+                        bet.claimed = true;
+                    }
+                }
+            }
+        }
+
         market.status = if outcome {
             MarketStatus::ResolvedYes
         } else {
@@ -189,7 +222,10 @@ impl Contract1 {
         };
 
         let outcome_str = if outcome { "YES" } else { "NO" };
-        Ok(format!("Market #{} resolved as {}", market_id, outcome_str))
+        Ok(format!(
+            "Market #{} resolved as {}. Distributed {} to {} winners", 
+            market_id, outcome_str, total_distributed, winners.len()
+        ))
     }
 
     pub fn claim_winnings(

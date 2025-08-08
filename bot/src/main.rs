@@ -319,7 +319,7 @@ async fn handle_solve(bot: Bot, msg: Message, ctx: Arc<BotContext>) -> HandlerRe
     };
     
     // Send processing message
-    bot.send_message(chat_id, "🤔 Evaluating solution with Claude AI...")
+    bot.send_message(chat_id, "🤔 Evaluating solution with Sonnet...")
         .await?;
     
     // Call Claude to evaluate the solution
@@ -369,7 +369,7 @@ async fn handle_solve(bot: Bot, msg: Message, ctx: Arc<BotContext>) -> HandlerRe
                 bot.send_message(
                     chat_id,
                     format!(
-                        "✅ MARKET RESOLVED ON-CHAIN!\n\n📊 Market #{}\n📄 Description: {}\n💬 Solution: \"{}\"\n👤 Solved by: @{}\n🎯 Outcome: {}\n\n🤖 Claude's analysis: {}\n\nTransaction: {}\n\n💰 Winnings have been automatically distributed to all winners!",
+                        "✅ MARKET RESOLVED ON-CHAIN!\n\n📊 Market #{}\n📄 Description: {}\n💬 Solution: \"{}\"\n👤 Solved by: @{}\n🎯 Outcome: {}\n\n🤖 Sonnet's analysis: {}\n\nTransaction: {}\n\n💰 Winnings have been automatically distributed to all winners!",
                         bet_id,
                         bet.description,
                         replied_text,
@@ -395,7 +395,7 @@ async fn handle_solve(bot: Bot, msg: Message, ctx: Arc<BotContext>) -> HandlerRe
         bot.send_message(
             chat_id,
             format!(
-                "❌ NOT RESOLVED\n\n📊 Market #{}\n📄 Description: {}\n💬 Proposed solution: \"{}\"\n👤 Proposed by: @{}\n\n🤖 Claude's analysis: {}\n\nThe market remains open.",
+                "❌ NOT RESOLVED\n\n📊 Market #{}\n📄 Description: {}\n💬 Proposed solution: \"{}\"\n👤 Proposed by: @{}\n\n🤖 Sonnet's analysis: {}\n\nThe market remains open.",
                 bet_id,
                 bet.description,
                 replied_text,

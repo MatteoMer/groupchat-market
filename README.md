@@ -62,8 +62,7 @@ cargo build --features build,contract1
 #### 3. Run the Server
 ```bash
 # From project root
-cd server
-cargo run -- --config ../config.toml
+RISC0_DEV_MODE=1 SP1_PROVER=mock cargo run -p server
 
 # Server will start on port 4001 by default
 ```
@@ -75,8 +74,7 @@ export TELOXIDE_TOKEN="your_telegram_bot_token"
 export CLAUDE_API_KEY="your_claude_api_key"
 
 # Run the bot
-cd bot
-cargo run
+cargo run -p bot
 
 # The bot will connect to the server at localhost:4001
 ```

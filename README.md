@@ -4,6 +4,9 @@ Built during [Frontiers](https://frontiers.paradigm.xyz/)
 
 **Turn your chats into prediction markets**
 
+![ScreenRecording_08-09-2025 14-35-35_1](https://github.com/user-attachments/assets/43cb85f8-1d86-4b10-a476-3ff8aaf17d37)
+
+
 ---
 
 ### Example
